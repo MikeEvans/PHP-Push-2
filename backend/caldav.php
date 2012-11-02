@@ -398,6 +398,16 @@ class BackendCalDAV extends BackendDiff {
 		$message->busystatus = "2";
 		 
 		$properties = $event->GetProperties();
+
+        // Find the start date first, to use as default for recurrences
+        foreach ($properties as $property)
+        {
+            if ($property->Name()=="DTSTART")
+            {
+                $message->starttime = $this->_MakeUTCDate($property->Value(), $this->_ParseTimezone($property->GetParameterValue("TZID")));			ZLog::Write(LOGLEVEL_DEBUG, sprintf("BackendCalDAV->_ParseVEventToSyncObject(): starttime ='%s'.",$message->starttime));
+            }
+        }
+
 		foreach ($properties as $property)
 		{
 			switch ($property->Name())
@@ -445,7 +455,7 @@ class BackendCalDAV extends BackendDiff {
 					break;
 
 				case "RRULE":
-					$message->recurrence = $this->_ParseRecurrence($property->Value(), "vevent");
+                    $message->recurrence = $this->_ParseRecurrence($property->Value(), "vevent", $message->starttime);
 					break;
 
 				case "CLASS":
@@ -588,7 +598,7 @@ class BackendCalDAV extends BackendDiff {
 	 * Parse a RRULE
 	 * @param string $rrulestr
 	 */
-	private function _ParseRecurrence($rrulestr, $type)
+	private function _ParseRecurrence($rrulestr, $type, $startdate)
 	{
 		$recurrence = new SyncRecurrence();
 		if ($type == "vtodo")
@@ -609,12 +619,64 @@ class BackendCalDAV extends BackendDiff {
 							break;
 						case "WEEKLY":
 							$recurrence->type = "1";
+                            // Set Defaults to avoid "Malformed Recurrence" errors in some clients where the
+                            // INTERVAL, UNTIL, and BYDAY values are required
+                            $recurrence->interval = "1";
+                            $recurrence->until = $this->_MakeUTCDate("20380119");
+                            $day = strtoupper(substr(DateTime::createFromFormat("U",$startdate)->Format("D"),0,2));
+                            $dval = 0;
+                            switch ($day)
+                            {
+                                //   1 = Sunday
+                                //   2 = Monday
+                                //   4 = Tuesday
+                                //   8 = Wednesday
+                                //  16 = Thursday
+                                //  32 = Friday
+                                //  64 = Saturday
+                                case "SU":
+                                    $dval += 1;
+                                    break;
+                                case "MO":
+                                    $dval += 2;
+                                    break;
+                                case "TU":
+                                    $dval += 4;
+                                    break;
+                                case "WE":
+                                    $dval += 8;
+                                    break;
+                                case "TH":
+                                    $dval += 16;
+                                    break;
+                                case "FR":
+                                    $dval += 32;
+                                    break;
+                                case "SA":
+                                    $dval += 64;
+                                    break;
+                            }
+                            $recurrence->dayofweek = $dval;
 							break;
 						case "MONTHLY":
 							$recurrence->type = "2";
+                            // Set Defaults to avoid "Malformed Recurrence" errors in some clients where the
+                            // INTERVAL, UNTIL, and BYMONTHDAY values are required
+                            $recurrence->interval = "1";
+                            $recurrence->until = $this->_MakeUTCDate("20380119");
+                            $day = DateTime::createFromFormat("U",$startdate)->Format("j");
+                            $recurrence->dayofmonth = $day;
 							break;
 						case "YEARLY":
 							$recurrence->type = "5";
+                            // Set Defaults to avoid "Malformed Recurrence" errors in some clients where the
+                            // INTERVAL, UNTIL, BYMONTHDAY, and BYMONTH values are required
+                            $recurrence->interval = "1";
+                            $recurrence->until = $this->_MakeUTCDate("20380119");
+                            $day = DateTime::createFromFormat("U",$startdate)->Format("j");
+                            $recurrence->dayofmonth = $day;
+                            $day = DateTime::createFromFormat("U",$startdate)->Format("n");
+                            $recurrence->monthofyear = $day;
 					}
 					break;
 
@@ -1005,6 +1067,16 @@ class BackendCalDAV extends BackendDiff {
 		$message->complete = "0";
 		
 		$properties = $vtodo->GetProperties();
+
+        // Find the start date first, to use as default for recurrences
+        foreach ($properties as $property)
+        {
+            if ($property->Name()=="DTSTART")
+            {
+                $message->starttime = $this->_MakeUTCDate($property->Value(), $this->_ParseTimezone($property->GetParameterValue("TZID")));			ZLog::Write(LOGLEVEL_DEBUG, sprintf("BackendCalDAV->_ParseVEventToSyncObject(): starttime ='%s'.",$message->starttime));
+            }
+        }
+
 		foreach ($properties as $property)
 		{
 			switch ($property->Name())
@@ -1046,7 +1118,7 @@ class BackendCalDAV extends BackendDiff {
 					break;
 					
 				case "RRULE":
-					$message->recurrence = $this->_ParseRecurrence($property->Value(), "vtodo");
+                    $message->recurrence = $this->_ParseRecurrence($property->Value(), "vtodo",$message->starttime);
 					break;
 				
 				case "CLASS":
